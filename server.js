@@ -31,22 +31,37 @@ const useCloudinary =
   process.env.MEDIA_STORAGE === 'cloudinary';
 
 if (useCloudinary) {
-  if (
-    !process.env.CLOUDINARY_CLOUD_NAME ||
-    !process.env.CLOUDINARY_API_KEY ||
-    !process.env.CLOUDINARY_API_SECRET
-  ) {
-    throw new Error(
-      'MEDIA_STORAGE=cloudinary but Cloudinary credentials are missing from .env.'
-    );
+  let credentials = null;
+  const { CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET } = process.env;
+
+  if (CLOUDINARY_CLOUD_NAME && CLOUDINARY_API_KEY && CLOUDINARY_API_SECRET) {
+    credentials = {
+      cloud_name: CLOUDINARY_CLOUD_NAME,
+      api_key: CLOUDINARY_API_KEY,
+      api_secret: CLOUDINARY_API_SECRET
+    };
+  } else if (process.env.CLOUDINARY_URL) {
+    try {
+      const parsed = new URL(process.env.CLOUDINARY_URL.trim());
+      const cloudName = decodeURIComponent(parsed.hostname);
+      const apiKey = decodeURIComponent(parsed.username);
+      const apiSecret = decodeURIComponent(parsed.password);
+      if (
+        parsed.protocol !== 'cloudinary:' ||
+        !cloudName || !apiKey || !apiSecret ||
+        /API_KEY|API_SECRET|CLOUD_NAME|CHANGE_THIS/i.test(process.env.CLOUDINARY_URL)
+      ) throw new Error('Invalid Cloudinary URL');
+      credentials = { cloud_name: cloudName, api_key: apiKey, api_secret: apiSecret };
+    } catch (_) {
+      throw new Error('CLOUDINARY_URL is missing or invalid. Set a real Cloudinary URL in the service environment.');
+    }
   }
 
-  cloudinary.config({
-    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-    api_key: process.env.CLOUDINARY_API_KEY,
-    api_secret: process.env.CLOUDINARY_API_SECRET,
-    secure: true
-  });
+  if (!credentials) {
+    throw new Error('MEDIA_STORAGE=cloudinary requires CLOUDINARY_URL or all three Cloudinary credential fields.');
+  }
+
+  cloudinary.config({ ...credentials, secure: true });
 }
 
 const localStorage = multer.diskStorage({
@@ -643,7 +658,6 @@ app.use((err,req,res,next)=>{console.error(err);res.status(500).json({error:err.
   catch(e){console.error(' Database connection failed:',e.message);}
   app.listen(PORT,'0.0.0.0',()=>console.log(` Los Blancos FC new portal running on port ${PORT}`));
 })();
-
 
 
 
