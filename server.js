@@ -454,6 +454,82 @@ app.post('/api/owner/applications/:id/reject', auth, ownerOnly, async (req,res)=
   try{ const [[a]]=await db.query(`SELECT user_id,full_name FROM player_applications WHERE id=?`,[req.params.id]); if(!a)return res.status(404).json({error:'Request not found.'}); await db.query(`UPDATE player_applications SET status='rejected',reviewed_by=?,reviewed_at=NOW() WHERE id=?`,[req.user.id,req.params.id]); await notify(a.user_id,'rejection','Application update','Your player application was not approved at this time.','#player/profile'); await audit(req.user.id,'reject','player_application',req.params.id,a.full_name); res.json({message:'Application rejected.'}); }catch(e){res.status(500).json({error:'Rejection failed.'});}
 });
 
+app.get('/api/owner/contributions', auth, ownerOnly, async (req,res)=>{
+  try{
+    const [contributions]=await db.query(`SELECT c.id,c.player_id,CASE WHEN p.id IS NULL THEN c.contributor_name ELSE p.full_name END contributor_name,CASE WHEN p.id IS NULL THEN 0 ELSE 1 END is_registered,c.amount,c.currency_code,c.contribution_date,c.note,c.created_at,u.email recorded_by_email FROM contributions c LEFT JOIN players p ON p.id=c.player_id LEFT JOIN users u ON u.id=c.recorded_by ORDER BY c.contribution_date DESC,c.id DESC`);
+    const [registeredPlayers]=await db.query(`SELECT p.id,p.full_name,p.jersey_number FROM players p INNER JOIN users u ON u.id=p.user_id AND u.player_id=p.id AND u.role='player' WHERE p.approval_status='approved' ORDER BY p.full_name`);
+    res.json({contributions,registeredPlayers});
+  }catch(e){console.error('CONTRIBUTIONS LIST ERROR:',e);res.status(500).json({error:'Could not load the contribution ledger.'});}
+});
+app.post('/api/owner/contributions', auth, ownerOnly, async (req,res)=>{
+  const amount=Number(req.body.amount);
+  const playerId=req.body.player_id?Number(req.body.player_id):null;
+  const currencyCode=String(req.body.currency_code||'KES').trim().toUpperCase();
+  const contributionDate=String(req.body.contribution_date||'').slice(0,10);
+  const note=String(req.body.note||'').trim().slice(0,500)||null;
+  if(!Number.isFinite(amount)||amount<=0||amount>9999999999)return res.status(400).json({error:'Enter a contribution amount greater than zero.'});
+  if(!/^[A-Z]{3}$/.test(currencyCode))return res.status(400).json({error:'Use a three-letter currency code.'});
+  const parsedDate=new Date(`${contributionDate}T00:00:00Z`);
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(contributionDate)||Number.isNaN(parsedDate.valueOf())||parsedDate.toISOString().slice(0,10)!==contributionDate)return res.status(400).json({error:'Choose a valid contribution date.'});
+  try{
+    let contributorName=String(req.body.contributor_name||'').trim().slice(0,190);
+    if(playerId){
+      if(!Number.isInteger(playerId)||playerId<1)return res.status(400).json({error:'Choose a valid registered player.'});
+      const [[player]]=await db.query(`SELECT p.id,p.full_name FROM players p INNER JOIN users u ON u.id=p.user_id AND u.player_id=p.id AND u.role='player' WHERE p.id=? AND p.approval_status='approved'`,[playerId]);
+      if(!player)return res.status(400).json({error:'Choose an approved, registered player.'});
+      contributorName=player.full_name;
+    }else if(!contributorName){
+      return res.status(400).json({error:'Enter the contributor’s name for an unregistered contributor.'});
+    }
+    const [result]=await db.query(`INSERT INTO contributions (player_id,contributor_name,amount,currency_code,contribution_date,note,recorded_by) VALUES (?,?,?,?,?,?,?)`,[playerId,contributorName,amount.toFixed(2),currencyCode,contributionDate,note,req.user.id]);
+    await audit(req.user.id,'create','contribution',result.insertId,`${contributorName} · ${currencyCode} ${amount.toFixed(2)}`);
+    res.status(201).json({message:'Contribution recorded.',contributionId:result.insertId});
+  }catch(e){console.error('CONTRIBUTION CREATE ERROR:',e);res.status(500).json({error:'Could not record the contribution.'});}
+});
+app.delete('/api/owner/contributions/:id', auth, ownerOnly, async (req,res)=>{
+  try{
+    const [[row]]=await db.query(`SELECT contributor_name,amount,currency_code FROM contributions WHERE id=?`,[req.params.id]);
+    if(!row)return res.status(404).json({error:'Contribution not found.'});
+    await db.query(`DELETE FROM contributions WHERE id=?`,[req.params.id]);
+    await audit(req.user.id,'delete','contribution',req.params.id,`${row.contributor_name} · ${row.currency_code} ${row.amount}`);
+    res.json({message:'Contribution removed from the ledger.'});
+  }catch(e){console.error('CONTRIBUTION DELETE ERROR:',e);res.status(500).json({error:'Could not remove the contribution.'});}
+});
+app.get('/api/owner/notification-recipients', auth, ownerOnly, async (req,res)=>{
+  try{
+    const [rows]=await db.query(`SELECT p.id,p.full_name,p.jersey_number,u.email FROM players p INNER JOIN users u ON u.id=p.user_id AND u.player_id=p.id AND u.role='player' WHERE p.approval_status='approved' ORDER BY p.full_name`);
+    res.json(rows);
+  }catch(e){console.error('NOTIFICATION RECIPIENTS ERROR:',e);res.status(500).json({error:'Could not load registered players.'});}
+});
+app.post('/api/owner/notifications/send', auth, ownerOnly, async (req,res)=>{
+  const title=String(req.body.title||'').trim().slice(0,255);
+  const message=String(req.body.message||'').trim();
+  const audience=req.body.audience==='all'?'all':'selected';
+  if(!title||!message)return res.status(400).json({error:'Enter a notification title and message.'});
+  if(message.length>5000)return res.status(400).json({error:'Keep the notification under 5,000 characters.'});
+  try{
+    let recipients=[];
+    if(audience==='all'){
+      [recipients]=await db.query(`SELECT u.id user_id,p.id player_id,p.full_name FROM players p INNER JOIN users u ON u.id=p.user_id AND u.player_id=p.id AND u.role='player' WHERE p.approval_status='approved' ORDER BY p.full_name`);
+    }else{
+      const playerIds=[...new Set((Array.isArray(req.body.player_ids)?req.body.player_ids:[]).map(Number).filter(id=>Number.isInteger(id)&&id>0))];
+      if(!playerIds.length)return res.status(400).json({error:'Select at least one registered player.'});
+      const placeholders=playerIds.map(()=>'?').join(',');
+      [recipients]=await db.query(`SELECT u.id user_id,p.id player_id,p.full_name FROM players p INNER JOIN users u ON u.id=p.user_id AND u.player_id=p.id AND u.role='player' WHERE p.approval_status='approved' AND p.id IN (${placeholders}) ORDER BY p.full_name`,playerIds);
+      if(recipients.length!==playerIds.length)return res.status(400).json({error:'One or more selected players are not registered and approved.'});
+    }
+    if(!recipients.length)return res.status(400).json({error:'There are no registered, approved players to notify.'});
+    const conn=await db.getConnection();
+    try{
+      await conn.beginTransaction();
+      for(const recipient of recipients)await conn.query(`INSERT INTO notifications (user_id,type,title,message,link) VALUES (?,?,?,?,?)`,[recipient.user_id,'club_message',title,message,'#/player/notifications']);
+      await conn.commit();
+    }catch(e){try{await conn.rollback();}catch(_){}throw e;}finally{conn.release();}
+    await audit(req.user.id,'send','player_notification',null,`${title} (${recipients.length} recipients)`);
+    res.status(201).json({message:`Notification sent to ${recipients.length} registered player${recipients.length===1?'':'s'}.`,recipientCount:recipients.length});
+  }catch(e){console.error('PLAYER NOTIFICATION SEND ERROR:',e);res.status(500).json({error:'Could not send the notification.'});}
+});
+
 app.get('/api/owner/players', auth, ownerOnly, async (req,res)=>{ const [rows]=await db.query(`SELECT * FROM players ORDER BY approval_status DESC,jersey_number,full_name`); res.json(rows); });
 app.post('/api/owner/players', auth, ownerOnly, upload.single('photo'), async (req,res)=>{
   try{ const {full_name,jersey_number,position,date_of_birth,preferred_foot,phone,bio,team}=req.body; if(!full_name){if(req.file)removePublicFile(publicFile(req.file));return res.status(400).json({error:'Player name is required.'});} const [r]=await db.query(`INSERT INTO players (full_name,photo,jersey_number,position,date_of_birth,preferred_foot,phone,bio,team,approval_status,joined_at) VALUES (?,?,?,?,?,?,?,?,?,'approved',CURDATE())`,[full_name,publicFile(req.file),cleanNumber(jersey_number),position||null,cleanDate(date_of_birth),preferred_foot||null,phone||null,bio||null,team||'Los Blancos FC']); await audit(req.user.id,'create','player',r.insertId,full_name); res.status(201).json({message:'Player added.',playerId:r.insertId}); }catch(e){if(req.file)removePublicFile(publicFile(req.file));res.status(500).json({error:'Could not add player.'});}
@@ -646,6 +722,15 @@ app.get('/api/player/matches',auth,playerOnly,async(req,res)=>{
 });app.get('/api/player/stats',auth,playerOnly,async(req,res)=>{const[[u]]=await db.query(`SELECT player_id FROM users WHERE id=?`,[req.user.id]);if(!u?.player_id)return res.json({stats:{appearances:0,goals:0,assists:0,yellow_cards:0,red_cards:0},matches:[]});const[[stats]]=await db.query(`SELECT COALESCE(SUM(appearances),0) appearances,COALESCE(SUM(goals),0) goals,COALESCE(SUM(assists),0) assists,COALESCE(SUM(yellow_cards),0) yellow_cards,COALESCE(SUM(red_cards),0) red_cards FROM player_match_stats WHERE player_id=?`,[u.player_id]);const[matches]=await db.query(`SELECT m.id,m.match_date,m.opponent_id,t.team_name opponent_name,s.* FROM player_match_stats s INNER JOIN matches m ON m.id=s.match_id LEFT JOIN teams t ON t.id=m.opponent_id WHERE s.player_id=? ORDER BY m.match_date DESC`,[u.player_id]);res.json({stats,matches});});
 app.get('/api/player/lineup',auth,playerOnly,async(req,res)=>{const[[u]]=await db.query(`SELECT player_id FROM users WHERE id=?`,[req.user.id]);if(!u?.player_id)return res.json([]);const[rows]=await db.query(`SELECT ml.*,m.match_date,m.match_time,m.status,t.team_name opponent_name FROM match_lineups ml INNER JOIN matches m ON m.id=ml.match_id LEFT JOIN teams t ON t.id=m.opponent_id WHERE ml.player_id=? ORDER BY m.match_date DESC`,[u.player_id]);res.json(rows);});
 
+app.get('/api/player/contributions',auth,playerOnly,async(req,res)=>{
+  try{
+    const [[player]]=await db.query(`SELECT p.id,p.full_name FROM users u INNER JOIN players p ON p.id=u.player_id AND p.user_id=u.id WHERE u.id=? AND u.role='player' AND p.approval_status='approved'`,[req.user.id]);
+    if(!player)return res.status(403).json({error:'The contribution ledger is available to approved, registered players only.'});
+    const [contributions]=await db.query(`SELECT c.id,c.player_id,CASE WHEN p.id IS NULL THEN c.contributor_name ELSE p.full_name END contributor_name,CASE WHEN p.id IS NULL THEN 0 ELSE 1 END is_registered,c.amount,c.currency_code,c.contribution_date,c.note FROM contributions c LEFT JOIN players p ON p.id=c.player_id ORDER BY c.contribution_date DESC,c.id DESC`);
+    res.json({playerId:player.id,playerName:player.full_name,contributions});
+  }catch(e){console.error('PLAYER CONTRIBUTIONS ERROR:',e);res.status(500).json({error:'Could not load the contribution ledger.'});}
+});
+
 app.get('/api/notifications',auth,async(req,res)=>{const[rows]=await db.query(`SELECT * FROM notifications WHERE user_id=? ORDER BY created_at DESC LIMIT 100`,[req.user.id]);res.json(rows);});
 app.post('/api/notifications/:id/read',auth,async(req,res)=>{await db.query(`UPDATE notifications SET is_read=1 WHERE id=? AND user_id=?`,[req.params.id,req.user.id]);res.json({message:'Notification read.'});});
 app.post('/api/notifications/read-all',auth,async(req,res)=>{await db.query(`UPDATE notifications SET is_read=1 WHERE user_id=?`,[req.user.id]);res.json({message:'All notifications marked as read.'});});
@@ -654,12 +739,27 @@ app.use((req,res)=>res.sendFile(path.join(__dirname,'public','index.html')));
 app.use((err,req,res,next)=>{console.error(err);res.status(500).json({error:err.message||'Unexpected server error'});});
 
 (async()=>{
-  try{await db.query('SELECT 1'); console.log(' Database connection ready');}
+  try{
+    await db.query('SELECT 1');
+    await db.query(`CREATE TABLE IF NOT EXISTS contributions (
+      id INT NOT NULL AUTO_INCREMENT,
+      player_id INT NULL,
+      contributor_name VARCHAR(190) NOT NULL,
+      amount DECIMAL(12,2) NOT NULL,
+      currency_code CHAR(3) NOT NULL DEFAULT 'KES',
+      contribution_date DATE NOT NULL,
+      note VARCHAR(500) NULL,
+      recorded_by INT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      KEY idx_contributions_player_date (player_id, contribution_date),
+      KEY idx_contributions_date (contribution_date)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+    console.log(' Database connection ready');
+  }
   catch(e){console.error(' Database connection failed:',e.message);}
   app.listen(PORT,'0.0.0.0',()=>console.log(` Los Blancos FC new portal running on port ${PORT}`));
 })();
-
-
 
 
 

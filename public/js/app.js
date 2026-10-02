@@ -6,6 +6,72 @@ const toast = document.getElementById('toast');
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmtDate = v => v ? new Date(`${String(v).slice(0,10)}T00:00:00`).toLocaleDateString(undefined,{day:'2-digit',month:'short',year:'numeric'}) : '—';
 const fmtTime = v => v ? String(v).slice(0,5) : '';
+function summarizeContributions(rows){
+  const currencies=new Map(),people=new Map();
+  for(const row of rows){
+    const currency=String(row.currency_code||'KES').toUpperCase(),amount=Number(row.amount||0);
+    currencies.set(currency,(currencies.get(currency)||0)+amount);
+    const name=String(row.contributor_name||'Contributor');
+    const identity=row.player_id?'player:'+row.player_id:'guest:'+name.trim().toLowerCase();
+    const key=identity+':'+currency;
+    const item=people.get(key)||{name:name,currency:currency,total:0,count:0,registered:Boolean(row.player_id)};
+    item.total+=amount;item.count+=1;people.set(key,item);
+  }
+  return {currencies:[...currencies.entries()],people:[...people.values()].sort((a,b)=>a.name.localeCompare(b.name))};
+}
+async function ownerContributions(count){
+  const data=await api('/api/owner/contributions'),rows=data.contributions||[],players=data.registeredPlayers||[];
+  const overview=summarizeContributions(rows);
+  const totalText=overview.currencies.map(item=>moneyFmt(item[1],item[0])).join(' · ')||moneyFmt(0,'KES');
+  const playerOptions=players.map(p=>'<option value="'+p.id+'">#'+esc(p.jersey_number||'—')+' · '+esc(p.full_name)+'</option>').join('');
+  const individualRows=overview.people.map(p=>'<tr><td><strong>'+esc(p.name)+'</strong></td><td><span class="pill">'+(p.registered?'Registered player':'Unregistered contributor')+'</span></td><td>'+p.count+'</td><td><strong>'+moneyFmt(p.total,p.currency)+'</strong></td></tr>').join('')||'<tr><td colspan="4" class="muted">No contributions recorded yet.</td></tr>';
+  const ledgerRows=rows.map(r=>'<tr><td>'+fmtDate(r.contribution_date)+'</td><td><strong>'+esc(r.contributor_name)+'</strong><div class="small muted">'+(r.is_registered?'Registered player':'Unregistered contributor')+'</div></td><td><strong>'+moneyFmt(r.amount,r.currency_code)+'</strong></td><td>'+esc(r.note||'—')+'</td><td><button class="btn danger" data-action="delete-contribution" data-id="'+r.id+'">Remove</button></td></tr>').join('')||'<tr><td colspan="5" class="muted">The ledger is empty.</td></tr>';
+  const contributorCount=new Set(rows.map(r=>r.player_id?'player:'+r.player_id:'guest:'+String(r.contributor_name||'').trim().toLowerCase())).size;
+  const body='<div class="notice">Private club ledger: visible only to club owners and approved, registered players. Unregistered contributors can still be recorded by name.</div>'+
+    '<div class="grid grid-3" style="margin-top:16px"><div class="card stat-card"><div class="eyebrow">TOTAL RECORDED</div><div class="value">'+esc(totalText)+'</div></div><div class="card stat-card"><div class="eyebrow">PAYMENTS LOGGED</div><div class="value">'+rows.length+'</div></div><div class="card stat-card"><div class="eyebrow">CONTRIBUTORS</div><div class="value">'+contributorCount+'</div></div></div>'+
+    '<div class="card pad" style="margin-top:18px"><div class="eyebrow">MONEY IN</div><h2>Record a contribution</h2><form id="contribution-form" class="form-grid" style="margin-top:15px"><div class="field"><label>Contributor type</label><select class="select" id="contribution-type"><option value="registered">Registered player</option><option value="guest">Unregistered contributor</option></select></div>'+
+    '<div class="field" id="contribution-player-field"><label>Registered player</label><select class="select" name="player_id" id="contribution-player" '+(players.length?'required':'disabled')+'><option value="">Choose a player</option>'+playerOptions+'</select>'+(players.length?'':'<small class="muted">No registered players are available yet.</small>')+'</div>'+
+    '<div class="field" id="contribution-guest-field" hidden><label>Contributor name</label><input class="input" name="contributor_name" id="contribution-guest-name" maxlength="190" placeholder="Name of player or supporter" disabled></div>'+
+    '<div class="field"><label>Amount</label><input class="input" name="amount" type="number" min="0.01" step="0.01" required></div><div class="field"><label>Currency</label><select class="select" name="currency_code"><option>KES</option><option>UGX</option><option>TZS</option><option>USD</option></select></div>'+
+    '<div class="field"><label>Date received</label><input class="input" name="contribution_date" type="date" value="'+new Date().toISOString().slice(0,10)+'" required></div><div class="field full"><label>Note (optional)</label><input class="input" name="note" maxlength="500" placeholder="For example: April team contribution"></div><div class="field full"><button class="btn gold-btn" type="submit">+ Record Money Contribution</button></div></form></div>'+
+    '<div class="card pad" style="margin-top:18px"><div class="eyebrow">INDIVIDUAL TOTALS</div><h2>Contributions by person</h2><div class="table-wrap"><table class="table"><thead><tr><th>Contributor</th><th>Account status</th><th>Payments</th><th>Total</th></tr></thead><tbody>'+individualRows+'</tbody></table></div></div>'+
+    '<div class="card pad" style="margin-top:18px"><div class="eyebrow">FULL LEDGER</div><h2>Every contribution</h2><div class="table-wrap"><table class="table"><thead><tr><th>Date</th><th>Contributor</th><th>Amount</th><th>Note</th><th></th></tr></thead><tbody>'+ledgerRows+'</tbody></table></div></div>';
+  await ownerLayout('/contributions','Money Contributions',body,count);
+  const form=document.getElementById('contribution-form'),type=document.getElementById('contribution-type'),playerField=document.getElementById('contribution-player-field'),guestField=document.getElementById('contribution-guest-field'),playerSelect=document.getElementById('contribution-player'),guestName=document.getElementById('contribution-guest-name');
+  const syncContributorType=()=>{const guest=type.value==='guest';playerField.hidden=guest;guestField.hidden=!guest;playerSelect.disabled=guest||!players.length;playerSelect.required=!guest&&players.length>0;guestName.disabled=!guest;guestName.required=guest;};
+  type.addEventListener('change',syncContributorType);syncContributorType();
+  form.addEventListener('submit',async e=>{e.preventDefault();const fields=new FormData(form),isGuest=type.value==='guest';const payload={player_id:isGuest?null:fields.get('player_id'),contributor_name:isGuest?fields.get('contributor_name'):'',amount:fields.get('amount'),currency_code:fields.get('currency_code'),contribution_date:fields.get('contribution_date'),note:fields.get('note')};try{const result=await api('/api/owner/contributions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});notify(result.message);await ownerContributions(count)}catch(err){notify(err.message,'error')}});
+}
+async function playerContributions(){
+  const data=await api('/api/player/contributions'),rows=data.contributions||[],overview=summarizeContributions(rows);
+  const totalText=overview.currencies.map(item=>moneyFmt(item[1],item[0])).join(' · ')||moneyFmt(0,'KES');
+  const ownTotals=new Map();rows.filter(r=>Number(r.player_id)===Number(data.playerId)).forEach(r=>{const code=String(r.currency_code||'KES');ownTotals.set(code,(ownTotals.get(code)||0)+Number(r.amount||0))});
+  const ownText=[...ownTotals.entries()].map(item=>moneyFmt(item[1],item[0])).join(' · ')||moneyFmt(0,'KES');
+  const individualRows=overview.people.map(p=>'<tr><td><strong>'+esc(p.name)+'</strong></td><td><span class="pill">'+(p.registered?'Registered player':'Unregistered contributor')+'</span></td><td>'+p.count+'</td><td><strong>'+moneyFmt(p.total,p.currency)+'</strong></td></tr>').join('')||'<tr><td colspan="4" class="muted">No contributions recorded yet.</td></tr>';
+  const ledgerRows=rows.map(r=>'<tr><td>'+fmtDate(r.contribution_date)+'</td><td><strong>'+esc(r.contributor_name)+'</strong><div class="small muted">'+(r.is_registered?'Registered player':'Unregistered contributor')+'</div></td><td><strong>'+moneyFmt(r.amount,r.currency_code)+'</strong></td><td>'+esc(r.note||'—')+'</td></tr>').join('')||'<tr><td colspan="4" class="muted">No contributions have been recorded yet.</td></tr>';
+  const body='<div class="notice">This private money ledger is available to approved, registered players. It includes contributions from unregistered players and supporters entered by the club.</div>'+
+    '<div class="grid grid-3" style="margin-top:16px"><div class="card stat-card"><div class="eyebrow">CLUB TOTAL</div><div class="value">'+esc(totalText)+'</div></div><div class="card stat-card"><div class="eyebrow">YOUR CONTRIBUTIONS</div><div class="value">'+esc(ownText)+'</div></div><div class="card stat-card"><div class="eyebrow">ENTRIES</div><div class="value">'+rows.length+'</div></div></div>'+
+    '<div class="card pad" style="margin-top:18px"><div class="eyebrow">INDIVIDUAL TOTALS</div><h2>Contributions by person</h2><div class="table-wrap"><table class="table"><thead><tr><th>Contributor</th><th>Account status</th><th>Payments</th><th>Total</th></tr></thead><tbody>'+individualRows+'</tbody></table></div></div>'+
+    '<div class="card pad" style="margin-top:18px"><div class="eyebrow">FULL LEDGER</div><h2>Every contribution</h2><div class="table-wrap"><table class="table"><thead><tr><th>Date</th><th>Contributor</th><th>Amount</th><th>Note</th></tr></thead><tbody>'+ledgerRows+'</tbody></table></div></div>';
+  await playerLayout('/contributions','Team Contributions',body);
+}
+async function ownerMessages(count){
+  const recipients=await api('/api/owner/notification-recipients');
+  const options=recipients.map(p=>'<option value="'+p.id+'">#'+esc(p.jersey_number||'—')+' · '+esc(p.full_name)+'</option>').join('');
+  const body='<div class="notice">Send private in-app notifications to one player, selected players, or every approved registered player. These appear in each player portal.</div>'+
+    '<div class="card pad" style="margin-top:18px"><div class="eyebrow">CLUB COMMUNICATION</div><h2>Compose a player notification</h2><form id="player-message-form" class="form-grid" style="margin-top:15px">'+
+    '<div class="field full"><label>Recipients</label><select class="select" id="message-audience" name="audience"><option value="all">All approved registered players</option><option value="selected">Choose one or more players</option></select></div>'+
+    '<div class="field full" id="message-recipients-field" hidden><label>Select players (use Ctrl or Command to choose several)</label><select class="select" id="message-player-ids" multiple size="7">'+options+'</select>'+(recipients.length?'':'<small class="muted">No registered players are available yet.</small>')+'</div>'+
+    '<div class="field full"><label>Title</label><input class="input" name="title" maxlength="255" required placeholder="Team contribution reminder"></div>'+
+    '<div class="field full"><label>Message</label><textarea class="textarea" name="message" maxlength="5000" required placeholder="Write your message to the players"></textarea></div>'+
+    '<div class="field full"><button class="btn gold-btn" type="submit" '+(recipients.length?'':'disabled')+'>Send Notification</button></div></form></div>';
+  await ownerLayout('/messages','Message Players',body,count);
+  const form=document.getElementById('player-message-form'),audience=document.getElementById('message-audience'),recipientsField=document.getElementById('message-recipients-field'),playerSelect=document.getElementById('message-player-ids');
+  const syncAudience=()=>{recipientsField.hidden=audience.value!=='selected'};
+  audience.addEventListener('change',syncAudience);syncAudience();
+  form.addEventListener('submit',async e=>{e.preventDefault();const fields=new FormData(form),playerIds=[...playerSelect.selectedOptions].map(option=>Number(option.value));try{const result=await api('/api/owner/notifications/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({audience:fields.get('audience'),player_ids:playerIds,title:fields.get('title'),message:fields.get('message')})});notify(result.message);await ownerMessages(count)}catch(err){notify(err.message,'error')}});
+}
+const moneyFmt = (value,currency='KES') => {const amount=Number(value||0);try{return new Intl.NumberFormat(undefined,{style:'currency',currency,minimumFractionDigits:2}).format(amount)}catch(_){return `${currency} ${amount.toFixed(2)}`}};
 const heroFallback = 'linear-gradient(135deg,#0e2b49,#030810 72%)';
 function notify(message,type='success'){toast.textContent=message;toast.className=`toast show ${type}`;setTimeout(()=>toast.className='toast',3000)}
 async function api(url, options={}){
@@ -95,7 +161,7 @@ async function publicPage(route){
   if(route==='/media')return renderPublicMedia();
   if(route.startsWith('/news/'))return renderNewsDetail(route.split('/')[2]);
   if(route.startsWith('/match/'))return renderMatchDetail(route.split('/')[2]);
-  if(['/player','/player/profile','/player/matches','/player/stats','/player/lineup','/player/notifications'].includes(route))return renderPlayer(route.replace('/player','')||'/');
+  if(['/player','/player/profile','/player/matches','/player/stats','/player/contributions','/player/lineup','/player/notifications'].includes(route))return renderPlayer(route.replace('/player','')||'/');
   if(route.startsWith('/player/')&&!route.startsWith('/player/portal'))return renderPublicPlayer(route.split('/')[2]);
   if(route==='/contact'){app.innerHTML=`${publicHeader('/contact')}<section class="auth-page"><div class="clean-panel"><div class="section-kicker">CONTACT</div><h1 class="page-title">TALK TO THE CLUB</h1><p class="muted">For fixtures, registration, media or club enquiries, use the available club portal.</p><div class="action-row"><button class="cta-main" data-route="#/register">PLAYER REGISTRATION ↗</button><button class="cta-ghost" data-route="#/login">ACCOUNT LOGIN</button></div></div></section>`;return;}
   if(route==='/login')return renderLogin();
@@ -213,11 +279,11 @@ function sidebar(role,active,count=0){
   const owner=role==='owner';
   const base=owner?'/owner':'/player';
   const links=owner?[
-    ['/','Dashboard'],['/requests','Player Requests'],['/players','Players'],['/matches','Matches'],
+    ['/','Dashboard'],['/requests','Player Requests'],['/players','Players'],['/contributions','Contributions'],['/matches','Matches'],
     ['/lineups','Lineup Centre'],['/statistics','Statistics'],['/teams','Teams'],['/news','News Manager'],
-    ['/media','Media Library'],['/notifications','Notifications'],['/settings','Website Settings'],['/audit','Activity Log']
+    ['/media','Media Library'],['/messages','Message Players'],['/notifications','Notifications'],['/settings','Website Settings'],['/audit','Activity Log']
   ]:[
-    ['/','Dashboard'],['/profile','My Profile'],['/matches','My Matches'],['/stats','My Stats'],
+    ['/','Dashboard'],['/profile','My Profile'],['/matches','My Matches'],['/stats','My Stats'],['/contributions','Contributions'],
     ['/lineup','Lineup'],['/notifications','Notifications']
   ];
   return `<aside class="sidebar"><div class="side-title">${owner?'CLUB CONTROL':'MY CLUB'}</div>${links.map(([path,label])=>{
@@ -235,7 +301,7 @@ async function renderOwner(sub='/'){
   const pages={
     '/':ownerDashboard,'/requests':ownerRequests,'/players':ownerPlayers,'/matches':ownerMatches,
     '/lineups':ownerLineups,'/statistics':ownerStatistics,'/teams':ownerTeams,'/news':ownerNews,
-    '/media':ownerMedia,'/notifications':ownerNotifications,'/settings':ownerSettings,'/audit':ownerAudit
+    '/media':ownerMedia,'/contributions':ownerContributions,'/messages':ownerMessages,'/notifications':ownerNotifications,'/settings':ownerSettings,'/audit':ownerAudit
   };
   const page=pages[sub];
   if(!page)return nav('/owner');
@@ -259,7 +325,7 @@ async function ownerNotifications(count){const rows=await api('/api/notification
 
 async function renderPlayer(sub='/'){
   if(!state.user) return nav('/login'); if(state.user.role!=='player')return nav('/owner');
-  if(sub==='/')return playerDashboard(); if(sub==='/profile')return playerProfile(); if(sub==='/matches')return playerMatches(); if(sub==='/stats')return playerStats(); if(sub==='/lineup')return playerLineup(); if(sub==='/notifications')return playerNotifications(); return nav('/player');
+  if(sub==='/')return playerDashboard(); if(sub==='/profile')return playerProfile(); if(sub==='/matches')return playerMatches(); if(sub==='/stats')return playerStats(); if(sub==='/contributions')return playerContributions(); if(sub==='/lineup')return playerLineup(); if(sub==='/notifications')return playerNotifications(); return nav('/player');
 }
 async function playerLayout(sub,title,body){const notes=await api('/api/notifications');const unread=notes.filter(n=>!n.is_read).length;app.innerHTML=`${publicHeader('',true)}<div class="app-shell">${sidebar('player',sub,unread)}<main class="portal-main">${portalHeader('player',title)}${body}</main></div>`}
 async function playerDashboard(){const d=await api('/api/player/me');const n=await api('/api/notifications');await playerLayout('/', 'Player Dashboard', `<div class="profile-grid"><div class="card pad"><div class="profile-header"><div class="profile-avatar">${imageOrPlaceholder(d.player?.photo||d.application?.photo,d.player?.full_name||d.application?.full_name||'Player')}</div><div><div class="eyebrow">MY PROFILE</div><h2>${esc(d.player?.full_name||d.application?.full_name||'Your profile')}</h2><p class="muted">${d.player?.approval_status==='approved'?'<span class="pill">Approved</span>':'<span class="pill">Pending approval</span>'}</p></div></div><div class="action-row" style="margin-top:18px"><button class="btn primary" data-route="#/player/profile">Edit Profile</button><button class="btn outline" data-route="#/player/stats">View Stats</button><button class="btn outline" data-route="#/player/lineup">View Lineup</button></div></div><div class="card pad"><div class="eyebrow">RECENT NOTIFICATIONS</div><h2>Stay updated</h2>${n.slice(0,4).map(x=>`<div class="notification-item ${x.is_read?'':'unread'}"><strong>${esc(x.title)}</strong><p class="muted">${esc(x.message)}</p></div>`).join('')||`<div class="empty">No notifications yet.</div>`}</div></div><div class="dashboard-actions" style="margin-top:18px"><button class="quick-btn" data-route="#/player/matches"><div class="quick-icon">\u{1F464}</div><div class="quick-title">My Matches</div><div class="quick-note">See all scheduled matches and your lineup status</div></button><button class="quick-btn" data-route="#/player/stats"><div class="quick-icon">\u{1F464}</div><div class="quick-title">My Stats</div><div class="quick-note">Goals, assists and appearances</div></button><button class="quick-btn" data-route="#/player/lineup"><div class="quick-icon">\u{1F464}</div><div class="quick-title">Lineup</div><div class="quick-note">Check published match lineups</div></button><button class="quick-btn" data-route="#/player/notifications"><div class="quick-icon">\u{1F464}</div><div class="quick-title">Notifications</div><div class="quick-note">Approval and club updates</div></button></div>`)}
@@ -607,6 +673,7 @@ async function handleAction(action,el){
   if(action==='refresh')return route();
   if(action==='approve-request')return approveRequest(el.dataset.id);
   if(action==='reject-request')return rejectRequest(el.dataset.id);
+  if(action==='delete-contribution'){if(!confirm('Remove this money contribution from the ledger?'))return;try{const result=await api('/api/owner/contributions/'+el.dataset.id,{method:'DELETE'});notify(result.message);await renderOwner('/contributions')}catch(err){notify(err.message,'error')}return}
   if(action==='view-request'){try{const rows=await api('/api/owner/applications');const r=rows.find(x=>String(x.id)===String(el.dataset.id));if(!r)return;modal('Player Request',`<div class="grid grid-2"><div class="card pad"><div class="eyebrow">PLAYER</div><h2>${esc(r.full_name)}</h2><p class="muted">${esc(r.email)}<br>${esc(r.phone||'')}<br>${esc(r.position||'Position not supplied')}</p></div><div class="card pad"><div class="eyebrow">APPLICATION</div><p class="muted">Jersey: ${esc(r.jersey_number||'—')}<br>Foot: ${esc(r.preferred_foot||'—')}<br>Submitted: ${fmtDate(r.created_at)}<br>Status: ${esc(r.status)}</p></div></div><div class="card pad" style="margin-top:14px"><h3>Bio</h3><p class="muted">${esc(r.bio||'No bio supplied.')}</p></div>${r.photo?`<img src="${esc(r.photo)}" style="width:180px;height:220px;object-fit:cover;border-radius:14px;margin-top:14px" alt="">`:''}`)}catch(e){notify(e.message,'error')}return}
   if(action==='add-player')return openPlayerModal();
   if(action==='edit-player')return openPlayerModal(el.dataset.id);

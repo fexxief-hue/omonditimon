@@ -368,6 +368,39 @@ const schemas = {
         }
     },
 
+    contributions: {
+        create: `
+            CREATE TABLE IF NOT EXISTS contributions (
+                id INT NOT NULL AUTO_INCREMENT,
+                player_id INT NULL,
+                contributor_name VARCHAR(190) NOT NULL,
+                amount DECIMAL(12,2) NOT NULL,
+                currency_code CHAR(3) NOT NULL DEFAULT 'KES',
+                contribution_date DATE NOT NULL,
+                note VARCHAR(500) NULL,
+                recorded_by INT NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                KEY idx_contributions_player_date (player_id, contribution_date),
+                KEY idx_contributions_date (contribution_date)
+            )
+            ENGINE=InnoDB
+            DEFAULT CHARSET=utf8mb4
+        `,
+
+        columns: {
+            id: 'INT NULL',
+            player_id: 'INT NULL',
+            contributor_name: 'VARCHAR(190) NULL',
+            amount: 'DECIMAL(12,2) NULL',
+            currency_code: "CHAR(3) NULL DEFAULT 'KES'",
+            contribution_date: 'DATE NULL',
+            note: 'VARCHAR(500) NULL',
+            recorded_by: 'INT NULL',
+            created_at: 'TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP'
+        }
+    },
+
     audit_logs: {
         create: `
             CREATE TABLE IF NOT EXISTS audit_logs (
