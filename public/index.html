@@ -4,17 +4,40 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#050914">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Los Blancos FC">
 <title>Los Blancos FC — Official Club</title>
 <meta name="description" content="The official Los Blancos FC digital club: squad, match centre, performance, stories and player portals.">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/assets/app-icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800;900&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/css/style.css">
+<link rel="stylesheet" href="/css/pwa.css">
 </head>
 <body>
 <div id="toast" class="toast" aria-live="polite"></div>
 <div id="app"></div>
 <div id="modal-root"></div>
-<script src="/js/app.js?v=owner-portal-20261001" defer></script>
+<div id="pwa-install-tools">
+  <button id="pwa-install-button" class="pwa-install-button" type="button" hidden>Install Los Blancos FC</button>
+  <div id="pwa-install-sheet" class="pwa-install-sheet" hidden>
+    <div class="pwa-install-backdrop" data-pwa-close></div>
+    <section class="pwa-install-dialog" role="dialog" aria-modal="true" aria-labelledby="pwa-install-title" aria-describedby="pwa-install-description">
+      <div class="pwa-install-kicker">LOS BLANCOS FC · MATCHDAY READY</div>
+      <h2 id="pwa-install-title">Take the club with you.</h2>
+      <p id="pwa-install-description">Add the official Los Blancos FC app to your home screen for quick access to club news, fixtures and your player portal.</p>
+      <div class="pwa-install-instructions pwa-android-instructions">In your browser, choose <strong>Install app</strong> or <strong>Add to Home screen</strong>.</div>
+      <div class="pwa-install-instructions pwa-ios-instructions">In Safari, tap <strong>Share</strong> ↑, then choose <strong>Add to Home Screen</strong>.</div>
+      <button class="pwa-install-close" type="button" data-pwa-close>Got it</button>
+    </section>
+  </div>
+</div>
+<script src="/js/app.js?v=pwa-1" defer></script>
+<script src="/js/pwa.js?v=1" defer></script>
 </body>
 </html>

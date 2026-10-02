@@ -92,6 +92,14 @@ function publicHeader(active='/', logged=false){
        <button class="header-logout" data-action="logout">LOG OUT</button>`
     : `<button class="header-login" data-route="#/login">LOG IN</button><button class="header-join" data-route="#/register">JOIN</button>`;
   const items=[['/','Home'],['/matches','Matches'],['/squad','Squad'],['/stats','Performance'],['/news','Stories'],['/media','Media']];
+  const route=getRoute();
+  const portalRoute=state.user?`#/${state.user.role==='owner'?'owner':'player'}`:'#/login';
+  const mobileNav=!logged?`<nav class="mobile-app-nav" aria-label="App navigation">
+    <a href="#/" ${active==='/'?'aria-current="page"':''}><b aria-hidden="true">⌂</b><span>Home</span></a>
+    <a href="#/matches" ${active==='/matches'||route.startsWith('/match/')?'aria-current="page"':''}><b aria-hidden="true">◷</b><span>Matches</span></a>
+    <a href="#/squad" ${active==='/squad'||route==='/squad'?'aria-current="page"':''}><b aria-hidden="true">♙</b><span>Squad</span></a>
+    <a href="${portalRoute}" ${route.startsWith('/login')||route.startsWith('/register')?'aria-current="page"':''}><b aria-hidden="true">▤</b><span>My Club</span></a>
+  </nav>`:'';
   return `<header class="site-header">
     <button class="site-brand" data-route="#/" aria-label="Los Blancos FC home">
       <span class="site-crest"><img src="${esc(logo)}" alt="Los Blancos FC"></span>
@@ -99,7 +107,7 @@ function publicHeader(active='/', logged=false){
     </button>
     <nav class="site-nav" aria-label="Primary navigation">${items.map(([r,t])=>`<button class="${active===r?'active':''}" data-route="#${r}">${t}</button>`).join('')}</nav>
     <div class="site-actions">${portal}</div>
-  </header>`;
+  </header>${mobileNav}`;
 }
 
 async function loadHome(){ try{state.home=await api('/api/public/home')}catch(e){state.home={settings:{club_name:'Los Blancos FC',tagline:'Discipline • Unity • Victory',hero_background:''},nextMatches:[],results:[],players:[],news:[]}; notify(e.message,'error');} }
