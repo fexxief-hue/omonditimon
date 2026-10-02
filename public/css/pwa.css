@@ -5,18 +5,20 @@
   z-index: 1100;
   right: 22px;
   bottom: calc(22px + env(safe-area-inset-bottom));
-  min-height: 44px;
-  padding: 0 18px;
+  min-height: 50px;
+  padding: 0 21px;
   border: 1px solid rgba(255, 232, 176, .45);
   border-radius: 999px;
   background: linear-gradient(135deg, #e5c87f, #b78a37);
   box-shadow: 0 8px 26px rgba(0, 0, 0, .38);
   color: #10131a;
-  font: 700 .72rem "DM Sans", sans-serif;
+  font: 700 .8rem "DM Sans", sans-serif;
   letter-spacing: .025em;
   cursor: pointer;
+  transition: transform .2s ease, box-shadow .2s ease, filter .2s ease;
 }
-.pwa-install-button:hover { filter: brightness(1.06); transform: translateY(-1px); }
+.pwa-install-button:hover { filter: brightness(1.06); transform: translateY(-2px); box-shadow: 0 12px 32px rgba(0, 0, 0, .46); }
+.pwa-install-button:active { transform: translateY(0) scale(.98); }
 .pwa-install-sheet {
   position: fixed;
   z-index: 1400;
@@ -44,7 +46,9 @@
 .pwa-ios-instructions { display: none; }
 .pwa-install-sheet[data-platform="ios"] .pwa-ios-instructions { display: block; }
 .pwa-install-sheet[data-platform="ios"] .pwa-android-instructions { display: none; }
-.pwa-install-close { min-height: 44px; margin-top: 19px; padding: 0 18px; border: 1px solid rgba(216, 173, 82, .55); border-radius: 5px; background: #d8ad52; color: #09111b; font: 700 .72rem "DM Sans", sans-serif; cursor: pointer; }
+.pwa-install-close { min-height: 50px; min-width: 132px; margin-top: 19px; padding: 0 20px; border: 1px solid rgba(216, 173, 82, .55); border-radius: 7px; background: linear-gradient(135deg, #e3c577, #c69a45); color: #09111b; font: 700 .8rem "DM Sans", sans-serif; cursor: pointer; transition: transform .18s ease, filter .18s ease; }
+.pwa-install-close:hover { filter: brightness(1.06); transform: translateY(-1px); }
+.pwa-install-button:focus-visible, .pwa-install-close:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
 @media (max-width: 760px) {
   .site-header {
     position: sticky;
@@ -62,6 +66,14 @@
   .site-brand span:last-child { display: block; }
   .site-nav { display: none; }
   .site-actions { order: initial; flex: 0 0 auto; }
+  .site-actions .header-portal,
+  .site-actions .header-login,
+  .site-actions .header-join,
+  .site-actions .header-logout { min-height: 46px; padding: 0 13px; font-size: .66rem; }
+  .site-actions .header-icon { width: 46px; height: 46px; }
+  .btn, .intro-enter, .form-actions button, .action-row button, .notification-actions button { min-height: 48px; padding: 12px 17px; font-size: .78rem; }
+  .side-btn { min-height: 46px; padding: 12px 14px; font-size: .75rem; }
+  .quick-btn { min-height: 82px; padding: 17px; }
   .mobile-app-nav {
     position: fixed;
     z-index: 850;
@@ -77,7 +89,7 @@
     -webkit-backdrop-filter: blur(18px);
   }
   .mobile-app-nav a {
-    min-height: 48px;
+    min-height: 54px;
     display: grid;
     align-content: center;
     justify-items: center;
@@ -90,9 +102,9 @@
   .mobile-app-nav a b { font-size: 17px; font-weight: 500; line-height: 1; }
   .mobile-app-nav a span { font-size: .58rem; font-weight: 600; letter-spacing: .025em; }
   .mobile-app-nav a[aria-current="page"] { color: #e3c577; }
-  .pwa-public-navigation #app { padding-bottom: calc(68px + env(safe-area-inset-bottom)); }
-  .pwa-install-button { right: 14px; bottom: calc(78px + env(safe-area-inset-bottom)); min-height: 42px; padding: 0 15px; }
+  .pwa-public-navigation #app { padding-bottom: calc(74px + env(safe-area-inset-bottom)); }
+  .pwa-install-button { right: 14px; bottom: calc(84px + env(safe-area-inset-bottom)); min-height: 50px; padding: 0 19px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .pwa-install-button:hover { transform: none; }
+  .pwa-install-button:hover, .pwa-install-close:hover { transform: none; }
 }

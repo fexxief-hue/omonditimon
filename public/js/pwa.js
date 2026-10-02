@@ -45,10 +45,16 @@
       return;
     }
 
-    await deferredInstallPrompt.prompt();
-    const choice = await deferredInstallPrompt.userChoice;
+    const promptEvent = deferredInstallPrompt;
     deferredInstallPrompt = null;
-    if (choice?.outcome === 'accepted') refreshInstallButton();
+    try {
+      await promptEvent.prompt();
+      const choice = await promptEvent.userChoice;
+      if (choice?.outcome === 'accepted') refreshInstallButton();
+    } catch (error) {
+      console.warn('The browser install prompt was unavailable.', error);
+      showInstallSheet();
+    }
   });
 
   closeTargets.forEach(target => target.addEventListener('click', closeInstallSheet));
