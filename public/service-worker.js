@@ -1,11 +1,12 @@
-const CACHE_NAME = 'lbfc-shell-v2';
+const CACHE_NAME = 'lbfc-shell-v3';
 const APP_SHELL = [
   '/',
   '/index.html',
   '/manifest.webmanifest',
   '/css/style.css',
   '/css/pwa.css',
-  '/js/app.js?v=pwa-1',
+  '/css/match-countdown.css',
+  '/js/app.js?v=match-countdown-1',
   '/js/pwa.js?v=1',
   '/assets/app-icon-192.png',
   '/assets/app-icon-512.png',

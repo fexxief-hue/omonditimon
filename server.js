@@ -473,17 +473,30 @@ app.post('/api/owner/contributions', auth, ownerOnly, async (req,res)=>{
   if(!/^\d{4}-\d{2}-\d{2}$/.test(contributionDate)||Number.isNaN(parsedDate.valueOf())||parsedDate.toISOString().slice(0,10)!==contributionDate)return res.status(400).json({error:'Choose a valid contribution date.'});
   try{
     let contributorName=String(req.body.contributor_name||'').trim().slice(0,190);
+    let registeredPlayer=null;
     if(playerId){
       if(!Number.isInteger(playerId)||playerId<1)return res.status(400).json({error:'Choose a valid registered player.'});
-      const [[player]]=await db.query(`SELECT p.id,p.full_name FROM players p INNER JOIN users u ON u.id=p.user_id AND u.player_id=p.id AND u.role='player' WHERE p.id=? AND p.approval_status='approved'`,[playerId]);
+      const [[player]]=await db.query(`SELECT p.id,p.full_name,u.id user_id FROM players p INNER JOIN users u ON u.id=p.user_id AND u.player_id=p.id AND u.role='player' WHERE p.id=? AND p.approval_status='approved'`,[playerId]);
       if(!player)return res.status(400).json({error:'Choose an approved, registered player.'});
+      registeredPlayer=player;
       contributorName=player.full_name;
     }else if(!contributorName){
       return res.status(400).json({error:'Enter the contributor’s name for an unregistered contributor.'});
     }
-    const [result]=await db.query(`INSERT INTO contributions (player_id,contributor_name,amount,currency_code,contribution_date,note,recorded_by) VALUES (?,?,?,?,?,?,?)`,[playerId,contributorName,amount.toFixed(2),currencyCode,contributionDate,note,req.user.id]);
+    const conn=await db.getConnection();
+    let result;
+    try{
+      await conn.beginTransaction();
+      [result]=await conn.query(`INSERT INTO contributions (player_id,contributor_name,amount,currency_code,contribution_date,note,recorded_by) VALUES (?,?,?,?,?,?,?)`,[playerId,contributorName,amount.toFixed(2),currencyCode,contributionDate,note,req.user.id]);
+      if(registeredPlayer){
+        const paymentText=`${currencyCode} ${amount.toFixed(2)}`;
+        const playerMessage=`Your ${paymentText} payment was successfully recorded in the club ledger. You’re helping keep the squad fueled and focused—our striker says thanks (he usually only talks to the ball). ⚽😄`;
+        await conn.query(`INSERT INTO notifications (user_id,type,title,message,link) VALUES (?,?,?,?,?)`,[registeredPlayer.user_id,'contribution_received','Payment received successfully!',playerMessage,'#/player/contributions']);
+      }
+      await conn.commit();
+    }catch(e){try{await conn.rollback();}catch(_){}throw e;}finally{conn.release();}
     await audit(req.user.id,'create','contribution',result.insertId,`${contributorName} · ${currencyCode} ${amount.toFixed(2)}`);
-    res.status(201).json({message:'Contribution recorded.',contributionId:result.insertId});
+    res.status(201).json({message:registeredPlayer?'Contribution recorded; the player has been notified.':'Contribution recorded.',contributionId:result.insertId});
   }catch(e){console.error('CONTRIBUTION CREATE ERROR:',e);res.status(500).json({error:'Could not record the contribution.'});}
 });
 app.delete('/api/owner/contributions/:id', auth, ownerOnly, async (req,res)=>{
@@ -760,7 +773,6 @@ app.use((err,req,res,next)=>{console.error(err);res.status(500).json({error:err.
   catch(e){console.error(' Database connection failed:',e.message);}
   app.listen(PORT,'0.0.0.0',()=>console.log(` Los Blancos FC new portal running on port ${PORT}`));
 })();
-
 
 
 

@@ -1,4 +1,5 @@
  const state = { user:null, home:null };
+let homeCountdownTimer=null;
 const app = document.getElementById('app');
 const modalRoot = document.getElementById('modal-root');
 const toast = document.getElementById('toast');
@@ -111,6 +112,53 @@ function publicHeader(active='/', logged=false){
 }
 
 async function loadHome(){ try{state.home=await api('/api/public/home')}catch(e){state.home={settings:{club_name:'Los Blancos FC',tagline:'Discipline • Unity • Victory',hero_background:''},nextMatches:[],results:[],players:[],news:[]}; notify(e.message,'error');} }
+function matchCountdownMarkup(match){
+  const date=String(match.match_date||'').slice(0,10),time=String(match.match_time||'').slice(0,8);
+  const heading=time?'COUNTDOWN TO KICK-OFF':'COUNTDOWN TO MATCHDAY';
+  return `<div class="match-countdown" id="home-match-countdown" data-match-date="${esc(date)}" data-match-time="${esc(time)}" data-match-status="${esc(match.status||'scheduled')}" aria-label="Countdown to the next match">
+    <div class="match-countdown-heading"><span>MATCHDAY CLOCK</span><strong>${heading}</strong>${time?'':`<small>Kick-off time to be announced</small>`}</div>
+    <div class="match-countdown-units" role="timer" aria-label="Time remaining until the match">
+      <div class="match-countdown-unit"><b data-countdown-unit="days">00</b><span>DAYS</span></div>
+      <div class="match-countdown-unit"><b data-countdown-unit="hours">00</b><span>HRS</span></div>
+      <div class="match-countdown-unit"><b data-countdown-unit="minutes">00</b><span>MIN</span></div>
+      <div class="match-countdown-unit"><b data-countdown-unit="seconds">00</b><span>SEC</span></div>
+    </div>
+  </div>`;
+}
+function startHomeMatchCountdown(){
+  if(homeCountdownTimer){clearInterval(homeCountdownTimer);homeCountdownTimer=null;}
+  const countdown=document.getElementById('home-match-countdown');
+  if(!countdown)return;
+  if(countdown.dataset.matchStatus==='live'){
+    countdown.innerHTML='<div class="match-countdown-live"><i aria-hidden="true"></i><span>WE’RE LIVE — EVEN THE STRIKER IS WATCHING THE BALL.</span></div>';
+    return;
+  }
+  const date=countdown.dataset.matchDate,time=countdown.dataset.matchTime||'00:00:00';
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(date)){
+    countdown.innerHTML='<div class="match-countdown-live">Match time is being confirmed by the club.</div>';
+    return;
+  }
+  const target=new Date(`${date}T${time}`);
+  if(Number.isNaN(target.valueOf())){
+    countdown.innerHTML='<div class="match-countdown-live">Match time is being confirmed by the club.</div>';
+    return;
+  }
+  let completed=false;
+  const update=()=>{
+    const remaining=target.valueOf()-Date.now();
+    if(remaining<=0){
+      countdown.innerHTML='<div class="match-countdown-live"><i aria-hidden="true"></i><span>MATCHDAY IS HERE — TIME TO MAKE SOME NOISE! ⚽</span></div>';
+      completed=true;clearInterval(homeCountdownTimer);homeCountdownTimer=null;return;
+    }
+    const seconds=Math.floor(remaining/1000),values={days:Math.floor(seconds/86400),hours:Math.floor(seconds%86400/3600),minutes:Math.floor(seconds%3600/60),seconds:seconds%60};
+    for(const [unit,value] of Object.entries(values)){
+      const field=countdown.querySelector(`[data-countdown-unit="${unit}"]`);
+      if(field)field.textContent=String(value).padStart(2,'0');
+    }
+  };
+  update();
+  if(!completed)homeCountdownTimer=setInterval(update,1000);
+}
 function matchCard(m){const finished=m.status==='finished';return `<div class="card match-card"><div class="match-row"><div><div class="team-logo"><img src="/assets/los-blancos-badge.jpg" alt="Los Blancos FC"></div><strong>Los Blancos FC</strong></div><div><div class="score">${finished?`${esc(m.home_score ?? '0')} - ${esc(m.away_score ?? '0')}`:'VS'}</div><span class="pill">${esc(m.status||'scheduled')}</span></div><div><div class="team-logo">${imageOrPlaceholder(m.opponent_logo,m.opponent_name||'OP')}</div><strong>${esc(m.opponent_name||'Opponent')}</strong></div></div><div class="fixture-meta"><span>${fmtDate(m.match_date)}</span><span>${fmtTime(m.match_time)}</span><span>${esc(m.venue||'Venue TBC')}</span></div><div style="margin-top:16px;text-align:center"><button class="btn outline" data-route="#/match/${m.id}">View Match Centre</button></div></div>`}
 function playerCard(p){return `<article class="card player-card"><div class="player-photo">${imageOrPlaceholder(p.photo,p.full_name)}</div><div class="player-info"><span class="player-number">#${esc(p.jersey_number||'—')}</span><div class="player-name">${esc(p.full_name)}</div><div class="muted">${esc(p.position||'Player')} • ${esc(p.team||'Los Blancos FC')}</div><button class="btn outline" style="margin-top:12px;width:100%" data-route="#/player/${p.id}">View Profile</button></div></article>`}
 function newsCard(n){return `<article class="card news-card"><div class="news-image">${n.image?`<img src="${esc(n.image)}" alt="${esc(n.title)}">`:''}</div><div class="news-body"><div class="small muted">${fmtDate(n.published_at||n.created_at)}</div><h3>${esc(n.title)}</h3><p class="muted">${esc(n.excerpt||'Latest club news and updates.')}</p><button class="btn outline" data-route="#/news/${n.id}">Read Story</button></div></article>`}
@@ -145,7 +193,7 @@ async function publicPage(route){
         </section>
         <section class="ticker"><div>LOS BLANCOS FC</div><div>DISCIPLINE</div><div>UNITY</div><div>AMBITION</div><div>LEGACY</div><div>LOS BLANCOS FC</div></section>
         <section class="home-section next-section"><div class="section-intro"><div><span class="section-no">01</span><div class="section-kicker">MATCHDAY</div><h2>THE NEXT<br><em>CHAPTER.</em></h2></div><button class="text-link" data-route="#/matches">ALL FIXTURES ↗</button></div>
-          ${next?`<article class="next-match"><div class="match-identity"><span>NEXT MATCH</span><small>${esc(next.competition||'FIXTURE')} · ${fmtDate(next.match_date)} · ${fmtTime(next.match_time)||'TBC'}</small></div><div class="match-teams"><div class="home-team"><img src="${esc(logo)}" alt=""><strong>LOS<br>BLANCOS</strong></div><div class="match-middle"><b>VS</b><span>${esc(next.venue||'VENUE TBC')}</span><button class="cta-main small" data-route="#/match/${next.id}">MATCH CENTRE ↗</button></div><div class="away-team">${imageOrPlaceholder(next.opponent_logo,next.opponent_name||'OP')}<strong>${esc(next.opponent_name||'OPPONENT')}</strong></div></div></article>`:`<div class="empty-panel">No upcoming fixture has been published yet.</div>`}
+          ${next?`<article class="next-match"><div class="match-identity"><span>NEXT MATCH</span><small>${esc(next.competition||'FIXTURE')} · ${fmtDate(next.match_date)} · ${fmtTime(next.match_time)||'TBC'}</small></div>${matchCountdownMarkup(next)}<div class="match-teams"><div class="home-team"><img src="${esc(logo)}" alt=""><strong>LOS<br>BLANCOS</strong></div><div class="match-middle"><b>VS</b><span>${esc(next.venue||'VENUE TBC')}</span><button class="cta-main small" data-route="#/match/${next.id}">MATCH CENTRE ↗</button></div><div class="away-team">${imageOrPlaceholder(next.opponent_logo,next.opponent_name||'OP')}<strong>${esc(next.opponent_name||'OPPONENT')}</strong></div></div></article>`:`<div class="empty-panel">No upcoming fixture has been published yet.</div>`}
         </section>
         <section class="home-section squad-section"><div class="section-intro"><div><span class="section-no">02</span><div class="section-kicker">FIRST TEAM</div><h2>THE<br><em>SQUAD.</em></h2></div><button class="text-link" data-route="#/squad">FULL SQUAD ↗</button></div>
           <div class="squad-marquee"><div class="squad-rail">${[...featured.slice(0,10),...featured.slice(0,10)].map((p,i)=>`<article class="player-tile" data-route="#/player/${p.id}" tabindex="${i>=featured.slice(0,10).length?'-1':'0'}" ${i>=featured.slice(0,10).length?'aria-hidden="true"':''}><div class="player-tile-image">${imageOrPlaceholder(p.photo,p.full_name)}</div><div class="player-tile-overlay"></div><span class="player-tile-number">${String(p.jersey_number||'—').padStart(2,'0')}</span><div class="player-tile-copy"><small>${esc(p.position||'PLAYER')}</small><strong>${esc(p.full_name)}</strong><button tabindex="${i>=featured.slice(0,10).length?'-1':'0'}" data-route="#/player/${p.id}">PROFILE ↗</button></div></article>`).join('')||'<div class="empty-panel">No approved players yet.</div>'}</div></div>
@@ -157,6 +205,7 @@ async function publicPage(route){
         <section class="join-band"><div><span class="section-kicker">FOR PLAYERS</span><h2>YOUR NEXT<br><em>CHAPTER.</em></h2></div><button class="cta-main" data-route="#/register">JOIN LOS BLANCOS ↗</button></section>
       </main>
       <footer class="new-footer"><div class="footer-mark"><img src="${esc(logo)}" alt=""><strong>LOS BLANCOS FC</strong><span>FOOTBALL CLUB</span></div><div class="footer-links"><button data-route="#/club">THE CLUB</button><button data-route="#/squad">SQUAD</button><button data-route="#/matches">MATCHES</button><button data-route="#/news">STORIES</button><button data-route="#/login">LOGIN</button></div><div class="footer-bottom"><span>© ${new Date().getFullYear()} Los Blancos FC</span><span>ONE CLUB · ONE STANDARD</span></div></footer>`;
+    startHomeMatchCountdown();
     startClubIntro();
     return;
   }
@@ -746,5 +795,8 @@ document.addEventListener('click', e => {
 
 
 /* Router bootstrap — every navigation button/hash route is handled here. */
+window.addEventListener('hashchange', () => {
+  if(homeCountdownTimer){clearInterval(homeCountdownTimer);homeCountdownTimer=null;}
+});
 window.addEventListener('hashchange', route);
 route();

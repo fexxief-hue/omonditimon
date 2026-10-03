@@ -1,0 +1,35 @@
+.match-countdown {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin: 17px auto 5px;
+  padding: 16px clamp(14px, 3vw, 24px);
+  border: 1px solid rgba(221, 189, 120, .26);
+  border-radius: 12px;
+  background: radial-gradient(ellipse at 5% 50%, rgba(221, 189, 120, .1), transparent 44%), linear-gradient(115deg, rgba(19, 29, 40, .94), rgba(8, 13, 20, .96));
+  box-shadow: inset 0 1px rgba(255, 255, 255, .035), 0 10px 30px rgba(0, 0, 0, .16);
+}
+.match-countdown-heading { flex: 0 0 auto; }
+.match-countdown-heading span { display: block; color: var(--gold); font-size: .57rem; font-weight: 800; letter-spacing: .2em; }
+.match-countdown-heading strong { display: block; margin-top: 5px; color: var(--white); font: 700 1.15rem/1 "Barlow Condensed", sans-serif; letter-spacing: .04em; }
+.match-countdown-heading small { display: block; margin-top: 6px; color: var(--muted); font-size: .64rem; }
+.match-countdown-units { display: grid; grid-template-columns: repeat(4, minmax(44px, 1fr)); gap: 5px; }
+.match-countdown-unit { min-width: 44px; display: grid; justify-items: center; gap: 2px; padding: 0 8px; text-align: center; }
+.match-countdown-unit + .match-countdown-unit { border-left: 1px solid rgba(255, 255, 255, .11); }
+.match-countdown-unit b { color: #f3dfad; font: 800 clamp(1.55rem, 4vw, 2.2rem)/.95 "Barlow Condensed", sans-serif; font-variant-numeric: tabular-nums; }
+.match-countdown-unit span { color: #8995a1; font-size: .5rem; font-weight: 800; letter-spacing: .17em; }
+.match-countdown-live { min-height: 54px; display: flex; align-items: center; gap: 11px; color: #f1dfb4; font-size: .75rem; font-weight: 800; letter-spacing: .07em; }
+.match-countdown-live i { width: 9px; height: 9px; flex: 0 0 auto; border-radius: 50%; background: #44d690; box-shadow: 0 0 0 5px rgba(68, 214, 144, .12), 0 0 16px rgba(68, 214, 144, .7); }
+@media (max-width: 600px) {
+  .match-countdown { display: grid; gap: 13px; padding: 14px; }
+  .match-countdown-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; }
+  .match-countdown-heading strong { margin-top: 0; font-size: 1.08rem; }
+  .match-countdown-heading small { flex-basis: 100%; margin-top: 0; }
+  .match-countdown-units { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; }
+  .match-countdown-unit { min-width: 0; padding: 0 4px; }
+  .match-countdown-unit b { font-size: clamp(1.7rem, 8vw, 2.15rem); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .match-countdown-live i { box-shadow: 0 0 0 4px rgba(68, 214, 144, .12); }
+}
